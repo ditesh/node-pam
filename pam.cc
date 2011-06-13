@@ -1,5 +1,6 @@
 #include <v8.h>
 #include <node.h>
+#include <string.h>
 #include <stdlib.h>
 #include <typeinfo>
 #include <iostream>
@@ -9,7 +10,6 @@ struct pam_response *reply;
 
 int null_conv(int num_msg, const struct pam_message **msg, struct pam_response **resp, void *appdata_ptr) {
 
-	printf("in nullconv");
 	*resp = reply;
 	return PAM_SUCCESS;
 
@@ -21,24 +21,26 @@ const char* ToCString(const v8::String::Utf8Value& value) {
 	return *value ? *value : "<string conversion failed>";
 }
 
-int _pam_authenticate(char *service, char *username, char *password) {
+extern "C" {
+	int _pam_authenticate(char *service, char *username, char *password) {
 
-	pam_handle_t *pamh = NULL;
-	int retval = pam_start(service, username, &conv, &pamh);
+		pam_handle_t *pamh = NULL;
+		int retval = pam_start(service, username, &conv, &pamh);
 
-	if (retval == PAM_SUCCESS) {
+		if (retval == PAM_SUCCESS) {
 
-		reply = (struct pam_response *) malloc(sizeof(struct pam_response));
-		reply[0].resp = password;
-		reply[0].resp_retcode = 0;
+			reply = (struct pam_response *) malloc(sizeof(struct pam_response));
+			reply[0].resp = password;
+			reply[0].resp_retcode = 0;
 
-		retval = pam_authenticate(pamh, 0);
-		pam_end(pamh, PAM_SUCCESS);
+			retval = pam_authenticate(pamh, 0);
+			pam_end(pamh, PAM_SUCCESS);
+
+		}
+
+		return retval;
 
 	}
-
-	return retval;
-
 }
 
 using namespace node;
@@ -84,13 +86,12 @@ public:
 		v8::String::Utf8Value password(args[2]);
 		bool result = false;
 
-		int retval = _pam_authenticate((char *) ToCString(service), (char *) ToCString(username), (char *) ToCString(password));
+		int retval = _pam_authenticate(strdup((char *) ToCString(service)), strdup((char *) ToCString(username)), strdup((char *) ToCString(password)));
 
 		if (retval == PAM_SUCCESS)
 			result = true;
 
-		Local<String> ret = String::New("abc");
-		return ret;//scope.Close(ret);
+		return Boolean::New(result);
 
 	 }
 };
