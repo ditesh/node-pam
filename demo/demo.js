@@ -8,11 +8,11 @@ var pam = new pamlib.PAM();
 // Change accordingly or write your own.
 var service = "system-auth";
 var username = "myusername";
-var password = "mypassword";
+var password = "myuserpass";
+
 pam.authenticate(service, username, password, function(result) {
-
 	console.log("Username: " + username + ", password: " + password + ", result: " + result);
-
 });
+
 
 console.log("This will get printed first");

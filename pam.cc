@@ -124,7 +124,11 @@ public:
 
 		bool result = false;
 		struct baton_t* args = (struct baton_t *) req->data;
-		int retval = _pam_authenticate(args->service, args->username, args->password);
+
+		char *service = strdup(args->service);
+		char *username = strdup(args->username);
+		char *password = strdup(args->password);
+		int retval = _pam_authenticate(service, username, password);
 
 		if (retval == PAM_SUCCESS)
 			result = true;
