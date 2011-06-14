@@ -2,9 +2,14 @@
 #include <node.h>
 #include <string.h>
 #include <stdlib.h>
-#include <typeinfo>
-#include <iostream>
 #include <security/pam_appl.h>
+
+#define REQ_FUN_ARG(I, VAR)                                             \
+  if (args.Length() <= (I) || !args[I]->IsFunction())                   \
+    return ThrowException(Exception::TypeError(                         \
+                  String::New("Argument " #I " must be a function")));  \
+  Local<Function> VAR = Local<Function>::Cast(args[I]);
+
 
 struct pam_response *reply;
 
@@ -22,7 +27,7 @@ const char* ToCString(const v8::String::Utf8Value& value) {
 }
 
 extern "C" {
-	int _pam_authenticate(char *service, char *username, char *password) {
+	int _pam_authenticate(const char *service, const char *username, const char *password) {
 
 		pam_handle_t *pamh = NULL;
 		int retval = pam_start(service, username, &conv, &pamh);
@@ -30,7 +35,7 @@ extern "C" {
 		if (retval == PAM_SUCCESS) {
 
 			reply = (struct pam_response *) malloc(sizeof(struct pam_response));
-			reply[0].resp = password;
+			reply[0].resp = (char *) password;
 			reply[0].resp_retcode = 0;
 
 			retval = pam_authenticate(pamh, 0);
@@ -78,20 +83,83 @@ public:
 
 	 }
 
+	 struct baton_t {
+		 PAM *hw;
+		 const char *service;
+		 const char *username;
+		 const char *password;
+		 bool result;
+		 Persistent<Function> cb;
+	 };
+
 	 static Handle<Value> authenticate(const Arguments& args) {
 
 		HandleScope scope;
-		v8::String::Utf8Value service(args[0]);
-		v8::String::Utf8Value username(args[1]);
-		v8::String::Utf8Value password(args[2]);
-		bool result = false;
+		REQ_FUN_ARG(3, cb);
 
-		int retval = _pam_authenticate(strdup((char *) ToCString(service)), strdup((char *) ToCString(username)), strdup((char *) ToCString(password)));
+		PAM* hw = ObjectWrap::Unwrap<PAM>(args.This());
+		baton_t *baton = new baton_t();
+		baton->hw = hw;
+
+		String::Utf8Value service(args[0]);
+		String::Utf8Value username(args[1]);
+		String::Utf8Value password(args[2]);
+
+		baton->service = strdup(ToCString(service));
+		baton->username = strdup(ToCString(username));
+		baton->password = strdup(ToCString(password));
+		baton->cb = Persistent<Function>::New(cb);
+		baton->result = false;
+
+		hw->Ref();
+
+		eio_custom(EIO_pam, EIO_PRI_DEFAULT, EIO_AfterPam, baton);
+		ev_ref(EV_DEFAULT_UC);
+
+		return Undefined();
+
+	}
+
+	static int EIO_pam(eio_req *req) {
+
+		bool result = false;
+		struct baton_t* args = (struct baton_t *) req->data;
+		int retval = _pam_authenticate(args->service, args->username, args->password);
 
 		if (retval == PAM_SUCCESS)
 			result = true;
 
-		return Boolean::New(result);
+		args->result = result;
+		return 0;
+
+	 }
+
+	 static int EIO_AfterPam(eio_req *req) {
+
+		HandleScope scope;
+		baton_t *baton = static_cast<baton_t *>(req->data);
+		ev_unref(EV_DEFAULT_UC);
+		baton->hw->Unref();
+
+		Local<Value> argv[1];
+
+		// This doesn't work
+		//argv[0] = False();
+
+		// This works, but this is not what we want
+		argv[0] = Integer::New(baton->result);
+
+		TryCatch try_catch;
+
+		baton->cb->Call(Context::GetCurrent()->Global(), 1, argv);
+
+		if (try_catch.HasCaught())
+			FatalException(try_catch);
+
+		baton->cb.Dispose();
+
+		delete baton;
+		return 0;
 
 	 }
 };

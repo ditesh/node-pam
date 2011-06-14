@@ -9,5 +9,10 @@ var pam = new pamlib.PAM();
 var service = "system-auth";
 var username = "myusername";
 var password = "mypassword";
-console.log("Username: " + username + ", password: " + password + ", output: " + pam.authenticate(service, username, password));
+pam.authenticate(service, username, password, function(result) {
 
+	console.log("Username: " + username + ", password: " + password + ", result: " + result);
+
+});
+
+console.log("This will get printed first");
