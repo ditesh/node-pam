@@ -53,7 +53,6 @@ using namespace v8;
 
 class PAM:ObjectWrap {
 
-private: int m_count;
 public:
 
 	 static Persistent<FunctionTemplate> s_ct;
